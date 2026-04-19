@@ -1,53 +1,25 @@
-const express = require('express');
-const EventEmitter = require('events');
-const app = express();
-const http = require('http').Server(app);
+const WebSocket = require('ws');
 
-// Pemancar video internal
-const frameEmitter = new EventEmitter();
-let lastFrame = null;
+// Render akan otomatis memberikan PORT, jika dilokal pakai 10000
+const PORT = process.env.PORT || 10000; 
+const wss = new WebSocket.Server({ port: PORT });
 
-// Endpoint untuk menerima gambar dari ESP32
-app.use(express.raw({ type: 'image/jpeg', limit: '500kb' }));
+wss.on('connection', (ws) => {
+    console.log('Koneksi baru terhubung!');
 
-app.post('/upload', (req, res) => {
-    lastFrame = req.body;
-    // Pancarkan frame ke Flutter
-    frameEmitter.emit('frame', lastFrame);
-    res.sendStatus(200);
-});
-
-// Endpoint untuk Flutter mengambil video (MJPEG Stream)
-app.get('/video_feed', (req, res) => {
-    res.writeHead(200, {
-        'Content-Type': 'multipart/x-mixed-replace; boundary=frame',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-        'Pragma': 'no-cache'
+    // Saat menerima gambar biner dari ESP32
+    ws.on('message', (message) => {
+        // Broadcast (teruskan) gambar tersebut ke semua HP/Aplikasi Flutter yang sedang membuka CCTV
+        wss.clients.forEach((client) => {
+            if (client !== ws && client.readyState === WebSocket.OPEN) {
+                client.send(message);
+            }
+        });
     });
 
-    // Langsung kirim frame terakhir agar Flutter tidak menunggu lama
-    if (lastFrame) {
-        res.write(`--frame\r\nContent-Type: image/jpeg\r\nContent-Length: ${lastFrame.length}\r\n\r\n`);
-        res.write(lastFrame);
-        res.write('\r\n');
-    }
-
-    // Fungsi untuk mengirim frame secara terus-menerus
-    const sendFrame = (frame) => {
-        res.write(`--frame\r\nContent-Type: image/jpeg\r\nContent-Length: ${frame.length}\r\n\r\n`);
-        res.write(frame);
-        res.write('\r\n');
-    };
-
-    // Dengarkan kiriman dari ESP32
-    frameEmitter.on('frame', sendFrame);
-
-    // Hapus pendengar jika Flutter ditutup (agar server tidak berat)
-    req.on('close', () => {
-        frameEmitter.removeListener('frame', sendFrame);
+    ws.on('close', () => {
+        console.log('Koneksi terputus.');
     });
 });
 
-const PORT = process.env.PORT || 10000;
-http.listen(PORT, () => console.log(`Server Relay Berjalan di Port ${PORT}`));
+console.log(`Server WebSocket CCTV Pintu Mall berjalan di port ${PORT}`);
