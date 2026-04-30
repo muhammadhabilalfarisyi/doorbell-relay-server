@@ -1,25 +1,57 @@
-const WebSocket = require('ws');
+const http = require("http");
+const WebSocket = require("ws");
 
-// Render akan otomatis memberikan PORT, jika dilokal pakai 10000
-const PORT = process.env.PORT || 10000; 
-const wss = new WebSocket.Server({ port: PORT });
+// ================= SERVER HTTP =================
+const PORT = process.env.PORT || 10000;
 
-wss.on('connection', (ws) => {
-    console.log('Koneksi baru terhubung!');
-
-    // Saat menerima gambar biner dari ESP32
-    ws.on('message', (message) => {
-        // Broadcast (teruskan) gambar tersebut ke semua HP/Aplikasi Flutter yang sedang membuka CCTV
-        wss.clients.forEach((client) => {
-            if (client !== ws && client.readyState === WebSocket.OPEN) {
-                client.send(message);
-            }
-        });
+const server = http.createServer((req, res) => {
+  if (req.url === "/stream") {
+    res.writeHead(200, {
+      "Content-Type": "multipart/x-mixed-replace; boundary=frame",
+      "Cache-Control": "no-cache",
+      "Connection": "keep-alive",
+      "Pragma": "no-cache",
     });
 
-    ws.on('close', () => {
-        console.log('Koneksi terputus.');
+    clients.push(res);
+
+    req.on("close", () => {
+      clients = clients.filter((c) => c !== res);
     });
+
+  } else {
+    res.writeHead(200);
+    res.end("MJPEG Stream Server is Running...");
+  }
 });
 
-console.log(`Server WebSocket CCTV Pintu Mall berjalan di port ${PORT}`);
+// ================= WEBSOCKET =================
+const wss = new WebSocket.Server({ server });
+
+let clients = [];
+
+wss.on("connection", (ws) => {
+  console.log("ESP32 / Client connected");
+
+  ws.on("message", (data) => {
+
+    // Kirim frame ke semua client HTTP (MJPEG)
+    clients.forEach((res) => {
+      res.write(`--frame\r\n`);
+      res.write(`Content-Type: image/jpeg\r\n`);
+      res.write(`Content-Length: ${data.length}\r\n\r\n`);
+      res.write(data);
+      res.write("\r\n");
+    });
+
+  });
+
+  ws.on("close", () => {
+    console.log("Client disconnected");
+  });
+});
+
+// ================= START SERVER =================
+server.listen(PORT, () => {
+  console.log(`Server jalan di port ${PORT}`);
+});
