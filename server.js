@@ -5,11 +5,9 @@ const WebSocket = require("ws");
 const PORT = process.env.PORT || 10000;
 
 let clients = [];
-let lastFrame = null; // 🔥 simpan frame terakhir
 
 const server = http.createServer((req, res) => {
 
-  // ================= MJPEG STREAM =================
   if (req.url === "/stream") {
     res.writeHead(200, {
       "Content-Type": "multipart/x-mixed-replace; boundary=frame",
@@ -24,26 +22,7 @@ const server = http.createServer((req, res) => {
       clients = clients.filter((c) => c !== res);
     });
 
-  }
-
-  // ================= SNAPSHOT =================
-  else if (req.url === "/capture") {
-
-    if (!lastFrame) {
-      res.writeHead(503);
-      return res.end("No frame yet");
-    }
-
-    res.writeHead(200, {
-      "Content-Type": "image/jpeg",
-      "Cache-Control": "no-cache"
-    });
-
-    res.end(lastFrame);
-  }
-
-  // ================= ROOT =================
-  else {
+  } else {
     res.writeHead(200);
     res.end("MJPEG Stream Server is Running...");
   }
@@ -57,10 +36,6 @@ wss.on("connection", (ws) => {
 
   ws.on("message", (data) => {
 
-    // 🔥 simpan frame terakhir (INI KUNCI PRO)
-    lastFrame = data;
-
-    // 🔥 kirim ke semua client stream
     clients.forEach((res) => {
       res.write(`--frame\r\n`);
       res.write(`Content-Type: image/jpeg\r\n`);
