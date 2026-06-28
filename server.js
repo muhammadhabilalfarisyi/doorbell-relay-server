@@ -8,7 +8,8 @@ let clients = [];
 
 const server = http.createServer((req, res) => {
 
-  if (req.url === "/stream") {
+  // [PERBAIKAN 1]: Ganti /stream jadi /video_feed biar cocok sama Flutter!
+  if (req.url === "/video_feed") {
     res.writeHead(200, {
       "Content-Type": "multipart/x-mixed-replace; boundary=frame",
       "Cache-Control": "no-cache",
@@ -35,15 +36,24 @@ wss.on("connection", (ws) => {
   console.log("ESP32 connected");
 
   ws.on("message", (data) => {
+    // [PERBAIKAN 2]: Cek dulu apakah datanya punya header dari ESP32
+    if (data.length > 2) {
+      const type = data[1]; // Baca byte kedua (0x01 = Video, 0x02 = Audio)
 
-    clients.forEach((res) => {
-      res.write(`--frame\r\n`);
-      res.write(`Content-Type: image/jpeg\r\n`);
-      res.write(`Content-Length: ${data.length}\r\n\r\n`);
-      res.write(data);
-      res.write("\r\n");
-    });
+      if (type === 1) { // Hanya proses kalau itu adalah paket Video
+        // Potong 2 byte pertama (header) agar menjadi gambar JPEG yang valid
+        const jpegData = data.slice(2);
 
+        clients.forEach((res) => {
+          res.write(`--frame\r\n`);
+          res.write(`Content-Type: image/jpeg\r\n`);
+          res.write(`Content-Length: ${jpegData.length}\r\n\r\n`);
+          res.write(jpegData); // Kirim gambar yang sudah bersih dari header
+          res.write("\r\n");
+        });
+      }
+      // Audio (type === 2) bisa kamu handle di sini nanti kalau mau diterusin
+    }
   });
 
   ws.on("close", () => {
